@@ -1,36 +1,21 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Seedance Harness
 
-## Getting Started
+Local production harness for making an anime with ByteDance's Seedance 2.x video models via fal.ai.
 
-First, run the development server:
+- **Characters & assets** with reference images (upload, or generate with Seedream) and an appearance lock that's sent with every shot.
+- **Storyboard** of scenes and shots; `@tag` references in prompts become `@ImageN` reference images automatically.
+- **Takes**: multiple generations per shot, background polling, auto-download, select/rate, seed reuse.
+- **Assemble** selected takes into one mp4 with ffmpeg.
+- **CLI** for a director (human or Claude) to drive everything; the web UI is the monitor.
+- **Mock provider** to rehearse the whole pipeline for free.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # add FAL_KEY
+npm run dev                  # open http://localhost:3000
+npm run h -- status          # CLI
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Read [HARNESS.md](HARNESS.md) for the workflow, CLI reference, script format and prompt guide.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Requires Node 20+ and ffmpeg on PATH.

@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# harness state: db, reference images, generated videos
+/data/
 
 # vercel
 .vercel

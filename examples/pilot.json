@@ -1,0 +1,60 @@
+{
+  "project": {
+    "name": "Paper Sky — pilot",
+    "stylePrompt": "2D anime, late-2000s TV anime look, clean line art, cel shading with soft gradients, warm painterly backgrounds, expressive eyes, subtle film grain, cinematic 16:9 composition.",
+    "suffixPrompt": "No subtitles, no captions, no watermark, no on-screen text, no extra characters.",
+    "aspectRatio": "16:9",
+    "resolution": "720p"
+  },
+  "assets": [
+    {
+      "kind": "character",
+      "name": "Aki Tanaka",
+      "tag": "aki",
+      "description": "17-year-old girl, slim, shoulder-length black hair with a small red hair clip on the left, amber eyes, navy school blazer over a white shirt with a red ribbon tie, grey pleated skirt.",
+      "notes": "Quiet, observant, dry humor. Voice: low, unhurried."
+    },
+    {
+      "kind": "character",
+      "name": "Ren Sato",
+      "tag": "ren",
+      "description": "17-year-old boy, tall and lanky, messy ash-brown hair, green eyes, same navy blazer worn open over an untucked white shirt, loosened tie, headphones around his neck.",
+      "notes": "Restless, talks with his hands."
+    },
+    {
+      "kind": "location",
+      "name": "School Rooftop",
+      "tag": "rooftop",
+      "description": "Flat concrete school rooftop at golden hour, chain-link fence along the edge, water tank, distant city skyline and a long orange sky."
+    }
+  ],
+  "scenes": [
+    {
+      "title": "1 — Rooftop, after school",
+      "description": "Aki has been waiting. Ren is late again.",
+      "location": "rooftop",
+      "shots": [
+        {
+          "title": "1A establishing",
+          "prompt": "Wide establishing shot of @rooftop. @aki stands alone at the fence with her back to camera, hair moving in the wind. Static tripod shot, only hair, skirt and clouds move. Ambient: distant traffic, wind.",
+          "duration": 5
+        },
+        {
+          "title": "1B Ren arrives",
+          "prompt": "Medium shot. The rooftop door bursts open and @ren stumbles through, out of breath, one hand raised in apology. Handheld feel, slight push-in. He says, panting: 'Sorry— club ran long.'",
+          "duration": 6
+        },
+        {
+          "title": "1C Aki turns",
+          "prompt": "Close-up on @aki. She turns her head slowly toward camera, unimpressed, then the corner of her mouth lifts. Shallow depth of field, rim light from the sunset. She says flatly: 'It's been twenty minutes.'",
+          "duration": 5
+        },
+        {
+          "title": "1D two-shot",
+          "prompt": "Two-shot from the side, @aki and @ren leaning on the fence looking at the skyline, city lights starting to turn on. Slow dolly right. @ren laughs, @aki hides a smile. Ambient wind, faint school chime.",
+          "duration": 8
+        }
+      ]
+    }
+  ]
+}
