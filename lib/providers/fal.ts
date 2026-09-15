@@ -120,17 +120,28 @@ export const falImages: ImageProvider = {
   },
 };
 
+/** Compact, human-readable error. fal validation errors echo the whole input back; keep only the messages. */
 export function describeError(e: unknown): string {
   if (e && typeof e === "object") {
     const anyE = e as { message?: string; body?: unknown; status?: number };
     const parts: string[] = [];
     if (anyE.status) parts.push(`HTTP ${anyE.status}`);
-    if (anyE.message) parts.push(anyE.message);
-    if (anyE.body) {
-      try {
-        parts.push(typeof anyE.body === "string" ? anyE.body : JSON.stringify(anyE.body));
-      } catch {
-        /* ignore */
+    const body = anyE.body as { detail?: unknown } | string | undefined;
+    const details = body && typeof body === "object" && Array.isArray(body.detail) ? (body.detail as { msg?: string; type?: string; ctx?: { extra_info?: { cause?: string; reason?: string } } }[]) : [];
+    if (details.length) {
+      for (const d of details) {
+        const cause = d.ctx?.extra_info?.cause ?? d.ctx?.extra_info?.reason;
+        parts.push(`${d.msg ?? d.type ?? "error"}${cause ? ` (${cause})` : ""}`);
+      }
+    } else {
+      if (anyE.message) parts.push(anyE.message);
+      if (typeof body === "string") parts.push(body.slice(0, 400));
+      else if (body) {
+        try {
+          parts.push(JSON.stringify(body).slice(0, 400));
+        } catch {
+          /* ignore */
+        }
       }
     }
     if (parts.length) return parts.join(": ");
