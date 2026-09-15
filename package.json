@@ -1,5 +1,5 @@
 {
-  "name": "seedance-harness",
+  "name": "typedream",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,8 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "h": "tsx cli/harness.ts",
-    "typecheck": "next typegen && tsc --noEmit"
+    "h": "tsx cli/typedream.ts",
+    "typecheck": "next typegen && tsc --noEmit",
+    "td": "tsx cli/typedream.ts"
   },
   "dependencies": {
     "@fal-ai/client": "^1.10.1",

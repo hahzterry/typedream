@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
-import fsp from "node:fs/promises";
 import path from "node:path";
-import { OUTPUT_DIR, ensureDirs } from "../paths";
+import { TMP_DIR, ensureRoot } from "../paths";
 import type { GenerateInput, ImageProvider, PollStatus, SubmitResult, VideoProvider } from "./types";
 
 // Free local provider for exercising the whole pipeline without spending credits.
 // Renders a test-pattern mp4 with ffmpeg that shows the prompt and ref count.
+// Output lands in data/tmp; jobs.ts moves it into the project's output dir.
 
 type Job = { input: GenerateInput; startedAt: number; file?: string; error?: string; done: boolean };
 type G = typeof globalThis & { __mockJobs?: Map<string, Job> };
@@ -23,16 +23,14 @@ function run(cmd: string, args: string[]) {
 }
 
 function esc(s: string) {
-  // escape for ffmpeg drawtext
   return s.replace(/\\/g, "\\\\").replace(/'/g, "\u2019").replace(/:/g, "\\:").replace(/%/g, "%%");
 }
 
 async function render(id: string, input: GenerateInput) {
-  ensureDirs();
+  ensureRoot();
   const secs = input.duration === "auto" ? 5 : input.duration;
   const [w, h] = input.aspectRatio === "9:16" ? [720, 1280] : input.aspectRatio === "1:1" ? [720, 720] : [1280, 720];
-  const file = `mock_${id}.mp4`;
-  const out = path.join(OUTPUT_DIR, file);
+  const out = path.join(TMP_DIR, `${id}.mp4`);
   const text = esc(input.prompt.slice(0, 90).replace(/\n/g, " "));
   const vf = [
     `drawtext=text='MOCK ${input.model} ${w}x${h} ${secs}s refs=${input.imageUrls.length}':fontsize=28:fontcolor=white:x=20:y=20:box=1:boxcolor=black@0.5`,
@@ -43,7 +41,7 @@ async function render(id: string, input: GenerateInput) {
     "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
     "-t", String(secs), "-vf", vf, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", out,
   ]);
-  return file;
+  return out;
 }
 
 export const mockProvider: VideoProvider = {
@@ -55,7 +53,6 @@ export const mockProvider: VideoProvider = {
     const id = `mock_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
     const job: Job = { input, startedAt: Date.now(), done: false };
     jobs().set(id, job);
-    // simulate a 6s generation time
     setTimeout(() => {
       render(id, input)
         .then((file) => Object.assign(job, { file, done: true }))
@@ -68,27 +65,19 @@ export const mockProvider: VideoProvider = {
     if (!job) return { state: "failed", error: "mock job lost (server restarted)" };
     if (!job.done) return Date.now() - job.startedAt < 3000 ? { state: "queued", position: 1 } : { state: "running" };
     if (job.error) return { state: "failed", error: job.error };
-    return { state: "done", videoUrl: `mock://${job.file}`, seed: 42 };
+    return { state: "done", videoUrl: `file://${job.file}`, seed: 42 };
   },
   estimateCost() {
     return 0;
   },
 };
 
-/** Mock "download": file is already in OUTPUT_DIR. */
-export async function mockResolveLocal(videoUrl: string): Promise<string> {
-  const file = videoUrl.replace("mock://", "");
-  await fsp.access(path.join(OUTPUT_DIR, file));
-  return file;
-}
-
 export const mockImages: ImageProvider = {
   async generateImages({ prompt, width, height, n }) {
-    ensureDirs();
+    ensureRoot();
     const out: { url: string }[] = [];
     for (let i = 0; i < n; i++) {
-      const file = `mockimg_${Date.now().toString(36)}_${i}.png`;
-      const p = path.join(OUTPUT_DIR, file);
+      const p = path.join(TMP_DIR, `mockimg_${Date.now().toString(36)}_${i}.png`);
       await run("ffmpeg", [
         "-y", "-f", "lavfi", "-i", `testsrc2=size=${width}x${height}`, "-frames:v", "1",
         "-vf", `drawtext=text='${esc(prompt.slice(0, 60))}':fontsize=24:fontcolor=white:x=20:y=20:box=1:boxcolor=black@0.5`, p,

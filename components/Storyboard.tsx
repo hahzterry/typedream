@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { outputUrl, refUrl, useHarness } from "./HarnessProvider";
+import { useHarness } from "./HarnessProvider";
 import { ShotEditor } from "./ShotEditor";
 import { Button, Chip, Empty, ErrorLine, Field, Modal, StatusBadge, fmtCost, fmtDuration } from "./ui";
 import type { Scene, Shot, Take } from "@/lib/types";
 
 export function Storyboard() {
-  const { state, api, busy } = useHarness();
+  const { state, api, busy, href } = useHarness();
   const [editing, setEditing] = useState<{ shot?: Shot; sceneId?: string } | null>(null);
   const [sceneModal, setSceneModal] = useState<Scene | "new" | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -19,6 +19,7 @@ export function Storyboard() {
   const shotsByScene = (id: string) => state.shots.filter((s) => s.sceneId === id).sort((a, b) => a.order - b.order);
   const takesFor = (id: string) => state.takes.filter((t) => t.shotId === id).sort((a, b) => a.n - b.n);
   const drafts = state.shots.filter((s) => !state.takes.some((t) => t.shotId === s.id && t.status !== "failed" && t.status !== "cancelled"));
+  const done = state.shots.filter((s) => state.takes.some((t) => t.id === s.selectedTakeId && t.status === "done")).length;
 
   async function run(fn: () => Promise<unknown>) {
     setErr(null);
@@ -30,23 +31,20 @@ export function Storyboard() {
   }
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-7">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold">Storyboard</h1>
-        <span className="text-fg-3 text-sm">
-          {scenes.length} scenes · {state.shots.length} shots · {state.takes.filter((t) => t.status === "done").length} finished takes
-        </span>
-        <div className="ml-auto flex gap-2">
+        <div>
+          <h1 className="text-xl font-semibold">Storyboard</h1>
+          <div className="text-fg-3 text-sm mt-0.5">
+            {scenes.length} scene{scenes.length === 1 ? "" : "s"} · {state.shots.length} shot{state.shots.length === 1 ? "" : "s"} · {done} with a picked take
+          </div>
+        </div>
+        <div className="ml-auto flex flex-wrap gap-2">
           <Button onClick={() => setSceneModal("new")}>+ Scene</Button>
           <Button onClick={() => setEditing({ sceneId: scenes[0]?.id })} disabled={!scenes.length}>
             + Shot
           </Button>
-          <Button
-            variant="primary"
-            disabled={busy || !drafts.length}
-            title={drafts.map((d) => d.title).join("\n")}
-            onClick={() => run(() => api("/api/generate", { body: { onlyDraft: true } }))}
-          >
+          <Button variant="primary" disabled={busy || !drafts.length} title={drafts.map((d) => d.title).join("\n")} onClick={() => run(() => api("/generate", { body: { onlyDraft: true } }))}>
             Generate {drafts.length} draft{drafts.length === 1 ? "" : "s"}
           </Button>
         </div>
@@ -55,20 +53,31 @@ export function Storyboard() {
 
       {!scenes.length && (
         <Empty>
-          No scenes yet. Add a scene, then shots. Or let the director import a script via <code className="mono">npm run h -- import script.json</code>.
+          <div className="grid gap-2">
+            <div className="text-fg-2">No scenes yet.</div>
+            <div>
+              Add characters under <Link href={href("/assets")} className="text-accent-2 hover:underline">Characters & Assets</Link>, then add a scene and shots here.
+              <br />
+              Or have the director import a script: <code className="mono">npm run td -- import script.json</code>
+            </div>
+          </div>
         </Empty>
       )}
 
-      {scenes.map((scene) => {
+      {scenes.map((scene, si) => {
         const shots = shotsByScene(scene.id);
         const loc = scene.locationId ? state.assets.find((a) => a.id === scene.locationId) : undefined;
         return (
           <section key={scene.id} className="grid gap-3">
-            <div className="flex items-center gap-3 border-b border-line pb-2">
+            <div className="flex flex-wrap items-center gap-3 border-b border-line pb-2">
               <span className="mono text-fg-3 text-xs">S{scene.order}</span>
               <h2 className="font-semibold">{scene.title}</h2>
               {loc && <Chip>📍 {loc.name}</Chip>}
-              {scene.description && <span className="text-fg-3 text-sm truncate max-w-xl">{scene.description}</span>}
+              {scene.description && (
+                <span className="text-fg-3 text-sm truncate max-w-xl" title={scene.description}>
+                  {scene.description}
+                </span>
+              )}
               <div className="ml-auto flex gap-1">
                 <Button size="sm" variant="ghost" onClick={() => setEditing({ sceneId: scene.id })}>
                   + shot
@@ -76,18 +85,39 @@ export function Storyboard() {
                 <Button size="sm" variant="ghost" onClick={() => setSceneModal(scene)}>
                   edit
                 </Button>
+                <Button size="sm" variant="ghost" disabled={busy || !shots.length} onClick={() => run(() => api("/generate", { body: { sceneId: scene.id, onlyDraft: true } }))}>
+                  generate drafts
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={busy || !shots.length}
-                  onClick={() => run(() => api("/api/generate", { body: { sceneId: scene.id, onlyDraft: true } }))}
+                  disabled={si === 0}
+                  title="move scene up"
+                  onClick={() => {
+                    const ids = scenes.map((s) => s.id);
+                    [ids[si - 1], ids[si]] = [ids[si], ids[si - 1]];
+                    run(() => api("/scenes", { method: "PATCH", body: { order: ids } }));
+                  }}
                 >
-                  generate drafts
+                  ↑
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={si === scenes.length - 1}
+                  title="move scene down"
+                  onClick={() => {
+                    const ids = scenes.map((s) => s.id);
+                    [ids[si + 1], ids[si]] = [ids[si], ids[si + 1]];
+                    run(() => api("/scenes", { method: "PATCH", body: { order: ids } }));
+                  }}
+                >
+                  ↓
                 </Button>
               </div>
             </div>
             {!shots.length && <div className="text-fg-3 text-sm pl-1">No shots in this scene.</div>}
-            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {shots.map((shot, i) => (
                 <ShotCard
                   key={shot.id}
@@ -95,13 +125,13 @@ export function Storyboard() {
                   index={i + 1}
                   takes={takesFor(shot.id)}
                   onEdit={() => setEditing({ shot })}
-                  onGenerate={() => run(() => api(`/api/shots/${shot.id}/generate`, { body: {} }))}
+                  onGenerate={() => run(() => api(`/shots/${shot.id}/generate`, { body: {} }))}
                   onMove={(dir) => {
                     const ids = shots.map((s) => s.id);
                     const j = i + dir;
                     if (j < 0 || j >= ids.length) return;
                     [ids[i], ids[j]] = [ids[j], ids[i]];
-                    run(() => api(`/api/scenes/${scene.id}`, { method: "PATCH", body: { shotOrder: ids } }));
+                    run(() => api(`/scenes/${scene.id}`, { method: "PATCH", body: { shotOrder: ids } }));
                   }}
                 />
               ))}
@@ -111,22 +141,23 @@ export function Storyboard() {
       })}
 
       <ShotEditor open={!!editing} onClose={() => setEditing(null)} shot={editing?.shot} sceneId={editing?.sceneId} />
-      <SceneEditor scene={sceneModal === "new" ? undefined : sceneModal ?? undefined} open={!!sceneModal} onClose={() => setSceneModal(null)} />
+      <SceneEditor scene={sceneModal === "new" ? undefined : (sceneModal ?? undefined)} open={!!sceneModal} onClose={() => setSceneModal(null)} />
     </div>
   );
 }
 
 function ShotCard({ shot, index, takes, onEdit, onGenerate, onMove }: { shot: Shot; index: number; takes: Take[]; onEdit: () => void; onGenerate: () => void; onMove: (d: -1 | 1) => void }) {
-  const { state, busy } = useHarness();
+  const { state, busy, href, refUrl, outputUrl } = useHarness();
   const selected = takes.find((t) => t.id === shot.selectedTakeId);
   const latest = takes[takes.length - 1];
-  const status = selected?.status === "done" ? "done" : latest?.status ?? "draft";
+  const status = selected?.status === "done" ? "done" : (latest?.status ?? "draft");
   const active = takes.filter((t) => t.status === "queued" || t.status === "running");
   const assets = (state?.assets ?? []).filter((a) => shot.assetIds.includes(a.id) || new RegExp(`@${a.tag}\\b`, "i").test(shot.prompt));
+  const link = href(`/shots/${shot.id}`);
 
   return (
-    <div className="bg-bg-2 border border-line rounded-lg overflow-hidden flex flex-col group">
-      <Link href={`/shots/${shot.id}`} className="block relative aspect-video bg-black">
+    <div className="card card-hover overflow-hidden flex flex-col group transition-colors">
+      <Link href={link} className="block relative aspect-video bg-black">
         {selected?.videoFile ? (
           <video src={outputUrl(selected.videoFile)} muted loop playsInline preload="metadata" className="w-full h-full object-contain" onMouseEnter={(e) => e.currentTarget.play()} onMouseLeave={(e) => e.currentTarget.pause()} />
         ) : (
@@ -142,14 +173,12 @@ function ShotCard({ shot, index, takes, onEdit, onGenerate, onMove }: { shot: Sh
             )}
           </div>
         )}
-        <div className="absolute top-1.5 left-1.5 flex gap-1">
-          <span className="mono text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-fg-2">#{index}</span>
-        </div>
-        <div className="absolute top-1.5 right-1.5">
+        <span className="absolute top-2 left-2 mono text-[10px] bg-black/70 px-1.5 py-0.5 rounded text-fg-2">#{index}</span>
+        <span className="absolute top-2 right-2">
           <StatusBadge status={status} />
-        </div>
+        </span>
         {assets.length > 0 && (
-          <div className="absolute bottom-1.5 left-1.5 flex -space-x-1.5">
+          <div className="absolute bottom-2 left-2 flex -space-x-1.5">
             {assets.slice(0, 5).map((a) => {
               const r = a.refs.find((x) => x.useInVideo) ?? a.refs[0];
               return r ? (
@@ -166,7 +195,7 @@ function ShotCard({ shot, index, takes, onEdit, onGenerate, onMove }: { shot: Sh
       </Link>
       <div className="p-3 flex flex-col gap-2 flex-1">
         <div className="flex items-start gap-2">
-          <Link href={`/shots/${shot.id}`} className="font-medium hover:text-accent-2 leading-tight">
+          <Link href={link} className="font-medium hover:text-accent-2 leading-tight">
             {shot.title}
           </Link>
           <span className="ml-auto mono text-[11px] text-fg-3 whitespace-nowrap">
@@ -198,26 +227,26 @@ function ShotCard({ shot, index, takes, onEdit, onGenerate, onMove }: { shot: Sh
 
 function SceneEditor({ scene, open, onClose }: { scene?: Scene; open: boolean; onClose: () => void }) {
   const { api, state } = useHarness();
-  const [title, setTitle] = useState(scene?.title ?? "");
-  const [desc, setDesc] = useState(scene?.description ?? "");
-  const [loc, setLoc] = useState(scene?.locationId ?? "");
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [loc, setLoc] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [key, setKey] = useState<string | undefined>();
-  if (open && key !== (scene?.id ?? "new")) {
-    setKey(scene?.id ?? "new");
+  const formKey = open ? (scene?.id ?? "new") : undefined;
+  if (formKey !== key) {
+    setKey(formKey);
     setTitle(scene?.title ?? "");
     setDesc(scene?.description ?? "");
     setLoc(scene?.locationId ?? "");
     setErr(null);
   }
-  if (!open && key !== undefined) setKey(undefined);
   const locations = (state?.assets ?? []).filter((a) => a.kind === "location");
 
   async function save() {
     try {
       const body = { title, description: desc || undefined, locationId: loc || undefined };
-      if (scene) await api(`/api/scenes/${scene.id}`, { method: "PATCH", body });
-      else await api("/api/scenes", { body });
+      if (scene) await api(`/scenes/${scene.id}`, { method: "PATCH", body });
+      else await api("/scenes", { body });
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -225,7 +254,7 @@ function SceneEditor({ scene, open, onClose }: { scene?: Scene; open: boolean; o
   }
   async function remove() {
     if (!scene || !confirm(`Delete scene "${scene.title}" and all its shots/takes?`)) return;
-    await api(`/api/scenes/${scene.id}`, { method: "DELETE" });
+    await api(`/scenes/${scene.id}`, { method: "DELETE" });
     onClose();
   }
 
@@ -233,10 +262,10 @@ function SceneEditor({ scene, open, onClose }: { scene?: Scene; open: boolean; o
     <Modal open={open} onClose={onClose} title={scene ? "Edit scene" : "New scene"}>
       <div className="grid gap-3">
         <Field label="Title">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Scene 1 — Morning" />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="1 — Rooftop, after school" autoFocus />
         </Field>
         <Field label="Description (context only, not sent to the model)">
-          <textarea rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} />
+          <textarea rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} className="!font-sans !text-sm" />
         </Field>
         <Field label="Default location asset" hint="Its reference images are attached to every shot in this scene.">
           <select value={loc} onChange={(e) => setLoc(e.target.value)}>

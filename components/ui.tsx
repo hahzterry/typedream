@@ -22,7 +22,7 @@ export function Button({
   type?: "button" | "submit";
   className?: string;
 }) {
-  const base = "inline-flex items-center gap-1.5 rounded-md font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap";
+  const base = "inline-flex items-center gap-1.5 rounded-lg font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap";
   const sizes = size === "sm" ? "text-xs px-2 py-1" : "text-sm px-3 py-1.5";
   const variants = {
     default: "bg-bg-3 border border-line-2 hover:border-fg-3 text-fg",
@@ -83,7 +83,7 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div className={`bg-bg-2 border border-line-2 rounded-lg shadow-2xl w-full ${wide ? "max-w-4xl" : "max-w-2xl"} mt-8`} onClick={(e) => e.stopPropagation()}>
+      <div className={`bg-bg-2 border border-line-2 rounded-xl shadow-2xl w-full ${wide ? "max-w-4xl" : "max-w-2xl"} mt-8`} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-line">
           <h2 className="font-semibold">{title}</h2>
           <button onClick={onClose} className="text-fg-3 hover:text-fg text-lg leading-none px-1">
@@ -102,7 +102,7 @@ export function ErrorLine({ error }: { error: string | null }) {
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="text-fg-3 text-sm border border-dashed border-line-2 rounded-lg p-8 text-center">{children}</div>;
+  return <div className="text-fg-3 text-sm border border-dashed border-line-2 rounded-xl p-8 text-center">{children}</div>;
 }
 
 export function fmtDuration(iso1?: string, iso2?: string) {

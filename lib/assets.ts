@@ -1,23 +1,17 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { newId, nowIso, slugify } from "./ids";
-import { REFS_DIR, ensureDirs, outputPath, refPath } from "./paths";
+import { ensureProjectDirs, refPath, refsDir } from "./paths";
 import { getImageProvider } from "./providers";
 import { getDb, mutate } from "./store";
 import type { Asset, AssetKind, RefImage } from "./types";
 
 const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 
-export async function createAsset(input: {
-  kind: AssetKind;
-  name: string;
-  tag?: string;
-  description?: string;
-  notes?: string;
-}): Promise<Asset> {
+export async function createAsset(pid: string, input: { kind: AssetKind; name: string; tag?: string; description?: string; notes?: string }): Promise<Asset> {
   const t = nowIso();
   const tag = slugify(input.tag ?? input.name);
-  return mutate((db) => {
+  return mutate(pid, (db) => {
     if (db.assets.some((a) => a.tag === tag)) throw new Error(`Asset tag "${tag}" already exists`);
     const asset: Asset = {
       id: newId(input.kind.slice(0, 3)),
@@ -35,8 +29,8 @@ export async function createAsset(input: {
   });
 }
 
-export async function updateAsset(id: string, patch: Partial<Pick<Asset, "name" | "tag" | "description" | "notes" | "kind">>) {
-  return mutate((db) => {
+export async function updateAsset(pid: string, id: string, patch: Partial<Pick<Asset, "name" | "tag" | "description" | "notes" | "kind">>) {
+  return mutate(pid, (db) => {
     const a = db.assets.find((x) => x.id === id);
     if (!a) throw new Error("asset not found");
     if (patch.tag !== undefined) {
@@ -53,39 +47,27 @@ export async function updateAsset(id: string, patch: Partial<Pick<Asset, "name" 
   });
 }
 
-export async function deleteAsset(id: string) {
-  await mutate((db) => {
+export async function deleteAsset(pid: string, id: string) {
+  await mutate(pid, (db) => {
     db.assets = db.assets.filter((a) => a.id !== id);
     for (const s of db.shots) s.assetIds = s.assetIds.filter((x) => x !== id);
     if (db.project.styleAssetId === id) db.project.styleAssetId = undefined;
     for (const sc of db.scenes) if (sc.locationId === id) sc.locationId = undefined;
   });
-  await fsp.rm(path.join(REFS_DIR, id), { recursive: true, force: true });
+  await fsp.rm(path.join(refsDir(pid), id), { recursive: true, force: true });
 }
 
-/** Store image bytes as a new reference for an asset. */
-export async function addRefFromBuffer(
-  assetId: string,
-  buf: Buffer,
-  ext: string,
-  meta: { label?: string; useInVideo?: boolean; genPrompt?: string } = {},
-): Promise<RefImage> {
+export async function addRefFromBuffer(pid: string, assetId: string, buf: Buffer, ext: string, meta: { label?: string; useInVideo?: boolean; genPrompt?: string } = {}): Promise<RefImage> {
   ext = ext.toLowerCase().startsWith(".") ? ext.toLowerCase() : `.${ext.toLowerCase()}`;
+  if (ext === ".jpeg") ext = ".jpg";
   if (!IMAGE_EXT.has(ext)) throw new Error(`Unsupported image type ${ext}`);
-  ensureDirs();
+  ensureProjectDirs(pid);
   const id = newId("ref");
   const file = `${id}${ext}`;
-  await fsp.mkdir(path.join(REFS_DIR, assetId), { recursive: true });
-  await fsp.writeFile(refPath(assetId, file), buf);
-  const ref: RefImage = {
-    id,
-    file,
-    label: meta.label ?? "",
-    useInVideo: meta.useInVideo ?? true,
-    genPrompt: meta.genPrompt,
-    createdAt: nowIso(),
-  };
-  await mutate((db) => {
+  await fsp.mkdir(path.join(refsDir(pid), assetId), { recursive: true });
+  await fsp.writeFile(refPath(pid, assetId, file), buf);
+  const ref: RefImage = { id, file, label: meta.label ?? "", useInVideo: meta.useInVideo ?? true, genPrompt: meta.genPrompt, createdAt: nowIso() };
+  await mutate(pid, (db) => {
     const a = db.assets.find((x) => x.id === assetId);
     if (!a) throw new Error("asset not found");
     a.refs.push(ref);
@@ -94,22 +76,26 @@ export async function addRefFromBuffer(
   return ref;
 }
 
-export async function addRefFromPath(assetId: string, localPath: string, meta: { label?: string; useInVideo?: boolean } = {}) {
+export async function addRefFromPath(pid: string, assetId: string, localPath: string, meta: { label?: string; useInVideo?: boolean; genPrompt?: string } = {}) {
   const buf = await fsp.readFile(localPath);
-  return addRefFromBuffer(assetId, buf, path.extname(localPath), { label: meta.label ?? path.basename(localPath, path.extname(localPath)), ...meta });
+  return addRefFromBuffer(pid, assetId, buf, path.extname(localPath), { label: path.basename(localPath, path.extname(localPath)), ...meta });
 }
 
-export async function addRefFromUrl(assetId: string, url: string, meta: { label?: string; useInVideo?: boolean; genPrompt?: string } = {}) {
-  if (url.startsWith("file://")) return addRefFromPath(assetId, url.slice(7), meta);
+export async function addRefFromUrl(pid: string, assetId: string, url: string, meta: { label?: string; useInVideo?: boolean; genPrompt?: string } = {}) {
+  if (url.startsWith("file://")) {
+    const ref = await addRefFromPath(pid, assetId, url.slice(7), meta);
+    await fsp.rm(url.slice(7), { force: true }).catch(() => {});
+    return ref;
+  }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`fetch ${url}: HTTP ${res.status}`);
   const ct = res.headers.get("content-type") ?? "";
   const ext = ct.includes("png") ? ".png" : ct.includes("webp") ? ".webp" : ct.includes("jpeg") || ct.includes("jpg") ? ".jpg" : path.extname(new URL(url).pathname) || ".png";
-  return addRefFromBuffer(assetId, Buffer.from(await res.arrayBuffer()), ext, meta);
+  return addRefFromBuffer(pid, assetId, Buffer.from(await res.arrayBuffer()), ext, meta);
 }
 
-export async function updateRef(assetId: string, refId: string, patch: Partial<Pick<RefImage, "label" | "useInVideo">>) {
-  return mutate((db) => {
+export async function updateRef(pid: string, assetId: string, refId: string, patch: Partial<Pick<RefImage, "label" | "useInVideo">>) {
+  return mutate(pid, (db) => {
     const a = db.assets.find((x) => x.id === assetId);
     const r = a?.refs.find((x) => x.id === refId);
     if (!a || !r) throw new Error("ref not found");
@@ -120,8 +106,8 @@ export async function updateRef(assetId: string, refId: string, patch: Partial<P
   });
 }
 
-export async function deleteRef(assetId: string, refId: string) {
-  const file = await mutate((db) => {
+export async function deleteRef(pid: string, assetId: string, refId: string) {
+  const file = await mutate(pid, (db) => {
     const a = db.assets.find((x) => x.id === assetId);
     if (!a) throw new Error("asset not found");
     const r = a.refs.find((x) => x.id === refId);
@@ -129,18 +115,19 @@ export async function deleteRef(assetId: string, refId: string) {
     a.updatedAt = nowIso();
     return r?.file;
   });
-  if (file) await fsp.rm(refPath(assetId, file), { force: true });
+  if (file) await fsp.rm(refPath(pid, assetId, file), { force: true });
 }
 
 /**
  * Generate reference images for an asset with the project's image model (Seedream on fal)
- * and attach them as refs. Prompt = style + asset description + extra.
+ * and attach them as refs. Prompt = style + asset description + extra guidance.
  */
 export async function generateRefs(
+  pid: string,
   assetId: string,
   opts: { prompt?: string; n?: number; width?: number; height?: number; seed?: number; label?: string; useDescription?: boolean },
 ) {
-  const db = getDb();
+  const db = getDb(pid);
   const a = db.assets.find((x) => x.id === assetId);
   if (!a) throw new Error("asset not found");
   const parts: string[] = [];
@@ -160,10 +147,7 @@ export async function generateRefs(
   const refs: RefImage[] = [];
   for (const [i, im] of images.entries()) {
     const label = opts.label ? (images.length > 1 ? `${opts.label} ${i + 1}` : opts.label) : `generated ${a.refs.length + i + 1}`;
-    refs.push(await addRefFromUrl(assetId, im.url, { label, genPrompt: prompt, useInVideo: true }));
-    if (im.url.startsWith("file://")) await fsp.rm(im.url.slice(7), { force: true }).catch(() => {});
+    refs.push(await addRefFromUrl(pid, assetId, im.url, { label, genPrompt: prompt, useInVideo: true }));
   }
   return { prompt, refs };
 }
-
-export { outputPath };

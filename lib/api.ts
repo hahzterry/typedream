@@ -16,7 +16,7 @@ export function handle<A extends unknown[]>(fn: (...args: A) => Promise<Response
     try {
       return await fn(...args);
     } catch (e) {
-      const status = e instanceof HttpError ? e.status : 500;
+      const status = e instanceof HttpError ? e.status : e instanceof Error && "status" in e && typeof e.status === "number" ? e.status : 500;
       const message = e instanceof Error ? e.message : String(e);
       if (status === 500) console.error("[api]", e);
       return Response.json({ error: message }, { status });

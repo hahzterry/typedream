@@ -1,5 +1,5 @@
-import { Storyboard } from "@/components/Storyboard";
+import { ProjectsHome } from "@/components/ProjectsHome";
 
 export default function Page() {
-  return <Storyboard />;
+  return <ProjectsHome />;
 }

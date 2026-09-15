@@ -1,11 +1,12 @@
+import { addRefFromPath, createAsset } from "./assets";
 import { newId, nowIso } from "./ids";
 import { findAsset, findScene, mutate } from "./store";
 import type { AspectRatio, Db, ModelFamily, Resolution, Scene, Shot } from "./types";
 
 // Scenes + shots CRUD and bulk import ("script" JSON written by the director).
 
-export async function createScene(input: { title: string; description?: string; locationId?: string; order?: number }): Promise<Scene> {
-  return mutate((db) => {
+export async function createScene(pid: string, input: { title: string; description?: string; locationId?: string; order?: number }): Promise<Scene> {
+  return mutate(pid, (db) => {
     const scene: Scene = {
       id: newId("sc"),
       order: input.order ?? nextOrder(db.scenes),
@@ -18,8 +19,8 @@ export async function createScene(input: { title: string; description?: string; 
   });
 }
 
-export async function updateScene(id: string, patch: Partial<Omit<Scene, "id">>) {
-  return mutate((db) => {
+export async function updateScene(pid: string, id: string, patch: Partial<Omit<Scene, "id">>) {
+  return mutate(pid, (db) => {
     const s = db.scenes.find((x) => x.id === id);
     if (!s) throw new Error("scene not found");
     if (patch.locationId !== undefined) patch.locationId = patch.locationId ? findAsset(db, patch.locationId)?.id : undefined;
@@ -28,12 +29,21 @@ export async function updateScene(id: string, patch: Partial<Omit<Scene, "id">>)
   });
 }
 
-export async function deleteScene(id: string) {
-  await mutate((db) => {
+export async function deleteScene(pid: string, id: string) {
+  await mutate(pid, (db) => {
     db.scenes = db.scenes.filter((s) => s.id !== id);
     const shotIds = new Set(db.shots.filter((s) => s.sceneId === id).map((s) => s.id));
     db.shots = db.shots.filter((s) => s.sceneId !== id);
     db.takes = db.takes.filter((t) => !shotIds.has(t.shotId));
+  });
+}
+
+export async function reorderScenes(pid: string, ids: string[]) {
+  await mutate(pid, (db) => {
+    ids.forEach((id, i) => {
+      const s = db.scenes.find((x) => x.id === id);
+      if (s) s.order = i + 1;
+    });
   });
 }
 
@@ -53,8 +63,8 @@ export interface ShotInput {
   order?: number;
 }
 
-export async function createShot(input: ShotInput): Promise<Shot> {
-  return mutate((db) => {
+export async function createShot(pid: string, input: ShotInput): Promise<Shot> {
+  return mutate(pid, (db) => {
     const scene = findScene(db, input.sceneId);
     if (!scene) throw new Error(`scene ${input.sceneId} not found`);
     const t = nowIso();
@@ -81,8 +91,8 @@ export async function createShot(input: ShotInput): Promise<Shot> {
   });
 }
 
-export async function updateShot(id: string, patch: Partial<Omit<Shot, "id" | "createdAt">>) {
-  return mutate((db) => {
+export async function updateShot(pid: string, id: string, patch: Partial<Omit<Shot, "id" | "createdAt">>) {
+  return mutate(pid, (db) => {
     const s = db.shots.find((x) => x.id === id);
     if (!s) throw new Error("shot not found");
     if (patch.assetIds) patch.assetIds = patch.assetIds.map((x) => findAsset(db, x)?.id).filter((x): x is string => !!x);
@@ -91,24 +101,21 @@ export async function updateShot(id: string, patch: Partial<Omit<Shot, "id" | "c
       if (!sc) throw new Error("scene not found");
       patch.sceneId = sc.id;
     }
-    if (patch.selectedTakeId && !db.takes.some((t) => t.id === patch.selectedTakeId && t.shotId === id)) {
-      throw new Error("take does not belong to this shot");
-    }
+    if (patch.selectedTakeId && !db.takes.some((t) => t.id === patch.selectedTakeId && t.shotId === id)) throw new Error("take does not belong to this shot");
     Object.assign(s, patch, { updatedAt: nowIso() });
     return s;
   });
 }
 
-export async function deleteShot(id: string) {
-  await mutate((db) => {
+export async function deleteShot(pid: string, id: string) {
+  await mutate(pid, (db) => {
     db.shots = db.shots.filter((s) => s.id !== id);
     db.takes = db.takes.filter((t) => t.shotId !== id);
   });
 }
 
-/** Reorder shots within a scene: ids in desired order. */
-export async function reorderShots(sceneId: string, ids: string[]) {
-  await mutate((db) => {
+export async function reorderShots(pid: string, sceneId: string, ids: string[]) {
+  await mutate(pid, (db) => {
     ids.forEach((id, i) => {
       const s = db.shots.find((x) => x.id === id && x.sceneId === sceneId);
       if (s) s.order = i + 1;
@@ -123,25 +130,23 @@ function nextOrder(items: { order: number }[]) {
 // ---- bulk import ----
 
 export interface ScriptFile {
-  project?: Partial<Pick<Db["project"], "name" | "stylePrompt" | "suffixPrompt" | "model" | "aspectRatio" | "resolution" | "generateAudio" | "maxRefsPerAsset">>;
+  project?: Partial<Pick<Db["project"], "name" | "description" | "stylePrompt" | "suffixPrompt" | "model" | "aspectRatio" | "resolution" | "generateAudio" | "maxRefsPerAsset">>;
   assets?: { kind: "character" | "location" | "style" | "prop"; name: string; tag?: string; description?: string; notes?: string; refs?: string[] }[];
   scenes?: {
     title: string;
     description?: string;
-    location?: string; // asset tag/name/id
+    location?: string;
     shots: (Omit<ShotInput, "sceneId" | "assetIds"> & { assets?: string[] })[];
   }[];
 }
 
-export async function importScript(script: ScriptFile, deps: { createAsset: typeof import("./assets").createAsset; addRefFromPath: typeof import("./assets").addRefFromPath }) {
+export async function importScript(pid: string, script: ScriptFile) {
   const report = { assets: 0, refs: 0, scenes: 0, shots: 0, warnings: [] as string[] };
-  if (script.project) {
-    await mutate((db) => Object.assign(db.project, script.project));
-  }
+  if (script.project) await mutate(pid, (db) => Object.assign(db.project, script.project));
   for (const a of script.assets ?? []) {
     let asset;
     try {
-      asset = await deps.createAsset(a);
+      asset = await createAsset(pid, a);
       report.assets++;
     } catch (e) {
       report.warnings.push(`asset ${a.name}: ${e instanceof Error ? e.message : e}`);
@@ -149,7 +154,7 @@ export async function importScript(script: ScriptFile, deps: { createAsset: type
     }
     for (const p of a.refs ?? []) {
       try {
-        await deps.addRefFromPath(asset.id, p);
+        await addRefFromPath(pid, asset.id, p);
         report.refs++;
       } catch (e) {
         report.warnings.push(`ref ${p}: ${e instanceof Error ? e.message : e}`);
@@ -157,11 +162,11 @@ export async function importScript(script: ScriptFile, deps: { createAsset: type
     }
   }
   for (const sc of script.scenes ?? []) {
-    const scene = await createScene({ title: sc.title, description: sc.description, locationId: sc.location });
+    const scene = await createScene(pid, { title: sc.title, description: sc.description, locationId: sc.location });
     report.scenes++;
     for (const sh of sc.shots ?? []) {
       const { assets, ...rest } = sh;
-      await createShot({ ...rest, sceneId: scene.id, assetIds: assets });
+      await createShot(pid, { ...rest, sceneId: scene.id, assetIds: assets });
       report.shots++;
     }
   }

@@ -24,7 +24,6 @@ export function ShotEditor({ open, onClose, shot, sceneId }: { open: boolean; on
   const [err, setErr] = useState<string | null>(null);
   const [key, setKey] = useState<string | undefined>();
 
-  // Reset form fields when the modal opens for a (different) shot.
   const formKey = open ? `${shot?.id ?? "new"}:${sceneId ?? ""}` : undefined;
   if (formKey !== key) {
     setKey(formKey);
@@ -58,8 +57,8 @@ export function ShotEditor({ open, onClose, shot, sceneId }: { open: boolean; on
       notes: notes || undefined,
     };
     try {
-      if (shot) await api(`/api/shots/${shot.id}`, { method: "PATCH", body });
-      else await api("/api/shots", { body });
+      if (shot) await api(`/shots/${shot.id}`, { method: "PATCH", body });
+      else await api("/shots", { body });
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -69,9 +68,9 @@ export function ShotEditor({ open, onClose, shot, sceneId }: { open: boolean; on
   return (
     <Modal open={open} onClose={onClose} title={shot ? `Edit shot: ${shot.title}` : "New shot"} wide>
       <div className="grid gap-4">
-        <div className="grid md:grid-cols-[1fr_200px] gap-3">
+        <div className="grid md:grid-cols-[1fr_220px] gap-3">
           <Field label="Title">
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. 1A — Aki wakes up" />
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="1A — Aki at the fence" autoFocus />
           </Field>
           <Field label="Scene">
             <select value={scene} onChange={(e) => setScene(e.target.value)}>
@@ -83,8 +82,8 @@ export function ShotEditor({ open, onClose, shot, sceneId }: { open: boolean; on
             </select>
           </Field>
         </div>
-        <Field label="Prompt (action · camera · dialogue)" hint="Reference assets with @tag; they become @ImageN references automatically.">
-          <textarea rows={8} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Medium shot. @aki sits up in bed, sunlight through blinds..." />
+        <Field label="Prompt — action · camera · dialogue" hint="Reference assets with @tag; they become @ImageN references automatically.">
+          <textarea rows={8} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Medium shot. @aki leans on the fence, wind in her hair, looks toward the skyline and smiles. Slow push-in. She says softly: 'Finally.'" />
         </Field>
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5 -mt-2">
